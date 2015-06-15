@@ -60,7 +60,7 @@ var SMW_STAGES = []stage{
 	{"vob1", 7, 1, 0, 0, 0, 0, 0x116, NORTH_CLEAR, [2]uint{0x1c, 0x27}, []string{"vob2"}, nil, 0, nil, nil, nil},
 	{"vob2", 7, 2, 0, 0, 0, 0, 0x115, NORTH_PATH, [2]uint{0x1a, 0x27}, []string{"bgh", "bfort"}, nil, 0, nil, nil, nil},
 	{"vob3", 7, 1, 0, 0, 0, 0, 0x113, NORTH_PATH, [2]uint{0x15, 0x27}, []string{"vob4"}, nil, 0, nil, nil, nil},
-	{"vob4", 7, 2, 0, 0, 0, 0, 0x10f, NORTH_PATH, [2]uint{0x15, 0x25}, []string{"sw5"}, nil, 0, nil, nil, nil},
+	{"vob4", 7, 2, 0, 0, 0, 0, 0x10f, NORTH_PATH, [2]uint{0x15, 0x25}, []string{"sw5", "c7"}, nil, 0, nil, nil, nil},
 	{"c1", 1, 1, 1, 0, 0, 0, 0x101, NORTH_PATH, [2]uint{0xa, 0x22}, []string{"dp1"}, nil, 0, nil, nil, nil},
 	{"c2", 2, 1, 2, 0, 0, 0, 0x7, NORTH_PATH, [2]uint{0xd, 0xc}, []string{"vd1"}, nil, 0, nil, nil, nil},
 	{"c3", 3, 1, 3, 0, 0, 0, 0x11c, NORTH_PATH, [2]uint{0xd, 0x32}, []string{"cba"}, nil, 0, nil, nil, nil},

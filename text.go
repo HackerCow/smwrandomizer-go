@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"strings"
 )
 
@@ -79,10 +80,10 @@ var TITLE_STRINGS = [][]string{
 	[]string{" "},
 }
 
-func shuffleLevelNames(stages []*stage, random Random) {
-	ptrs := make([]byte, 0)
-	for _, e := range stages {
-		ptrs = append(ptrs, e.data["nameptr"][0])
+func shuffleLevelNames(stages []*stage, random *Random) {
+	ptrs := make([]byte, len(stages))
+	for i, e := range stages {
+		ptrs[i] = e.data["nameptr"][0]
 	}
 
 	var j int
@@ -98,7 +99,7 @@ func shuffleLevelNames(stages []*stage, random Random) {
 	}
 }
 
-func randomizeLevelNames(random Random, rom []byte) {
+func randomizeLevelNames(random *Random, rom []byte) {
 	ndx := 0x21AC5
 	for i := 0; i < len(TITLE_STRINGS); i++ {
 		arr := TITLE_STRINGS[i]
@@ -130,7 +131,6 @@ func charToTitleNum(chr uint8) byte {
 	for i := 0; i < len(basechars); i++ {
 		chars[basechars[i]] = byte(i)
 	}
-
 	for k, _ := range chars {
 		if k == chr {
 			return chars[chr]
@@ -140,6 +140,7 @@ func charToTitleNum(chr uint8) byte {
 }
 
 func writeToTitle(title string, color uint, rom []byte) {
+	fmt.Println("writing ", title)
 	title = strings.ToUpper(centerPad(title, 19))
 	for i := 0; i < 19; i++ {
 		var num = charToTitleNum(title[i])
@@ -147,5 +148,7 @@ func writeToTitle(title string, color uint, rom []byte) {
 		rom[0x2B6D7+i*2+0] = byte(num & 0xFF)
 		rom[0x2B6D7+i*2+1] &= 0xE0
 		rom[0x2B6D7+i*2+1] |= byte(byte((color << 2) | uint((num>>8)&0x3)))
+		fmt.Printf("%c %d\n", title[i], num)
+		printMD5(rom, "writeToTitle loop")
 	}
 }

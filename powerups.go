@@ -105,7 +105,7 @@ func removeCape(rom []byte, stages []*stage) {
 	setSlice(rom, 0x0AE88, []byte{0x06, 0x02, 0x02, 0x05, 0x06, 0x01, 0x01, 0x05})
 }
 
-func randomizePowerups(random Random, rom []byte, stages []*stage) {
+func randomizePowerups(random *Random, rom []byte, stages []*stage) {
 	powerups := []byte{0x74, 0x75, 0x77}
 	blockmap := map[byte][]byte{
 		0x28: {0x28, 0x29},

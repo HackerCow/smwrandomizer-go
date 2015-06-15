@@ -1,16 +1,18 @@
 package main
 
 import (
+	//"fmt"
 	"math"
 )
 
 type Random struct {
-	seed int
+	Seed int
 }
 
 func (r *Random) NextFloat() float64 {
-	ret := math.Sin(float64(r.seed)) * 10000
-	r.seed++
+	ret := math.Sin(float64(r.Seed)) * 10000
+	r.Seed++
+	//fmt.Println("seed in rand=", r.Seed)
 	return ret - math.Floor(ret)
 }
 

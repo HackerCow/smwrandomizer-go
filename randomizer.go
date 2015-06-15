@@ -100,13 +100,13 @@ func setSlice(dst []byte, offset uint, src []byte) {
 }
 
 func getPointer(off uint, len uint, rom []byte) uint {
-	//fmt.Printf("getPointer(ofF=0x%x, len=0x%x, rom)\n", off, len)
+	//fmt.Printf("getPointer(off=%d, len=%d, rom)\n", off, len)
 	x := uint(0)
 	for i := uint(0); i < len; i++ {
-		//fmt.Printf("byte = 0x%x\n", rom[off+i])
+		//fmt.Printf("byte = %d\n", rom[off+i])
 		x |= uint(rom[off+i]) << uint(i*8)
 	}
-	//fmt.Printf("x = 0x%x\n", x)
+	//fmt.Printf("x = %d\n", x)
 	return x
 }
 
@@ -128,15 +128,15 @@ func fixDemo(rom []byte) {
 
 var printMD5Count = 0
 
-func printMD5(arr []byte) {
+func printMD5(arr []byte, msg string) {
 	if DEBUG_MD5 {
 		printMD5Count++
-		fmt.Printf("#%d: %x\n", printMD5Count, md5.Sum(arr))
+		fmt.Printf("#%d: %x (%s)\n", printMD5Count, md5.Sum(arr), msg)
 	}
 }
 
 // randomizes slippery/water/tide flags
-func randomizeFlags(random Random, stages []*stage, rom []byte, opt *options) {
+func randomizeFlags(random *Random, stages []*stage, rom []byte, opt *options) {
 	setSlice(rom, 0x2D8B9, []byte{
 		0xA5, 0x0E, 0x8D, 0x0B, 0x01, 0x0A, 0x18, 0x65, 0x0E, 0xA8,
 		0xB9, 0x00, 0xE0, 0x85, 0x65, 0xB9, 0x01, 0xE0, 0x85, 0x66,
@@ -244,7 +244,8 @@ func getScreenExitsByAddr(snes uint, rom []byte, id uint) []*exit {
 					break
 				}
 
-				x := &exit{id, addr, uint(rom[addr] & 0x1F), (rom[addr+1] & 0x08) != 0, (rom[addr+1] & 0x02) != 0, uint(rom[addr+3]) | (id & 0x100)}
+				target := uint(rom[addr+3]) | (id & 0x100)
+				x := &exit{id, addr, uint(rom[addr] & 0x1F), (rom[addr+1] & 0x08) != 0, (rom[addr+1] & 0x02) != 0, target}
 				exits = append(exits, x)
 			}
 			break
@@ -256,6 +257,7 @@ func getScreenExitsByAddr(snes uint, rom []byte, id uint) []*exit {
 func getScreenExits(id uint, rom []byte) []*exit {
 	start := uint(LAYER1_OFFSET + 3*id)
 	snes := getPointer(start, 3, rom)
+	fmt.Println("snes", snes)
 	return getScreenExitsByAddr(snes, rom, id)
 }
 
@@ -291,6 +293,11 @@ func getRelatedSublevels(baseid uint, rom []byte) []uint {
 		ids = append(ids, id)
 
 		exits := getScreenExits(id, rom)
+		if len(exits) > 0 {
+			fmt.Println("exits", exits[0])
+		} else {
+			fmt.Println("exits empty!")
+		}
 		for i := 0; i < len(exits); i++ {
 			x := exits[i]
 			next := getSublevelFromExit(x, rom)
@@ -306,6 +313,7 @@ func getRelatedSublevels(baseid uint, rom []byte) []uint {
 			}
 		}
 	}
+	fmt.Println("ids", ids, "baseid", baseid)
 	return ids
 }
 
@@ -331,8 +339,12 @@ func backupStage(stg *stage, rom []byte) {
 	for i := 0; i < len(LEVEL_OFFSETS); i++ {
 		off := LEVEL_OFFSETS[i]
 		start := off.offset + off.bytes*stg.id
-		stg.data[off.name] = rom[start : start+off.bytes]
-		fmt.Println(off.name, "=", rom[start:start+off.bytes], "(", start, ")")
+
+		stg.data[off.name] = make([]byte, off.bytes)
+		copy(stg.data[off.name], rom[start:start+off.bytes])
+
+		//printMD5(stg.data[off.name], fmt.Sprintf("data %s", off.name))
+		fmt.Println("backup level=", stg.name, "offset=", off.name, rom[start:start+off.bytes], "(", start, ")")
 	}
 
 	stg.translevel = getTranslevel(stg.id)
@@ -340,54 +352,53 @@ func backupStage(stg *stage, rom []byte) {
 	for i := 0; i < len(TRANS_OFFSETS); i++ {
 		off := TRANS_OFFSETS[i]
 		start := off.offset + off.bytes*stg.translevel
-		stg.data[off.name] = rom[start : start+off.bytes]
+
+		stg.data[off.name] = make([]byte, off.bytes)
+		copy(stg.data[off.name], rom[start:start+off.bytes])
+		//printMD5(stg.data[off.name], fmt.Sprintf("trans %s", off.name))
 	}
 
 	stg.sublevels = getRelatedSublevels(stg.id, rom)
 
-	var allexits []*exit
 	for _, sublevel := range stg.sublevels {
 		screenexits := getScreenExits(sublevel, rom)
 		for _, x := range screenexits {
-			allexits = append(allexits, x)
+			stg.allexits = append(stg.allexits, x)
 		}
 	}
 
 	if stg.id == 0x024 {
 		// coins - room 2
-		// XXX: maybe 0 isn't right
 		xs := getScreenExitsByAddr(0x06E9FB, rom, 0)
 		for _, x := range xs {
-			allexits = append(allexits, x)
+			stg.allexits = append(stg.allexits, x)
 		}
 		xs = getScreenExitsByAddr(0x06EAB0, rom, 0)
 		for _, x := range xs {
-			allexits = append(allexits, x)
+			stg.allexits = append(stg.allexits, x)
 		}
 
 		// time - room 3
 		xs = getScreenExitsByAddr(0x06EB72, rom, 0)
 		for _, x := range xs {
-			allexits = append(allexits, x)
+			stg.allexits = append(stg.allexits, x)
 		}
 		xs = getScreenExitsByAddr(0x06EBBE, rom, 0)
 		for _, x := range xs {
-			allexits = append(allexits, x)
+			stg.allexits = append(stg.allexits, x)
 		}
 
 		// yoshi coins - room 4
 		xs = getScreenExitsByAddr(0x06EC7E, rom, 0)
 		for _, x := range xs {
-			allexits = append(allexits, x)
+			stg.allexits = append(stg.allexits, x)
 		}
 	}
-	stg.allexits = allexits
 
-	// XXX: i don't think this is neccesarry?
-	if len(stg.tile) != 0 {
-		// XXX: maybe 0 isn't right
-		stg.data["owtile"] = []byte{rom[getOverworldOffset(stg, 0)]}
-	}
+	stg.data["owtile"] = []byte{rom[getOverworldOffset(stg, 0)]}
+	//fmt.Println("data owtile:", stg.data["owtile"])
+
+	//fmt.Println()
 }
 
 func backupData(stages []*stage, rom []byte) {
@@ -396,25 +407,30 @@ func backupData(stages []*stage, rom []byte) {
 	}
 }
 
-func shuffle(stages []*stage, random Random, opt *options) {
+func shuffle(r *Random, s []*stage) []*stage {
+	for i := 1; i < len(s); i++ {
+		j := r.NextInt(i)
+		t := s[j]
+		s[j] = s[i]
+		s[i] = t
+	}
+	return s
+}
+
+func shuffleLevels(stages []*stage, random *Random, opt *options) []*stage {
 	rndstages := make([]*stage, len(stages))
 	copy(rndstages, stages)
-
 	if opt.randomizeStages {
-		var j int
-		for i := 1; i < len(rndstages); i++ {
-			j = random.NextInt(i)
-			t := rndstages[j]
-			rndstages[j] = rndstages[i]
-			rndstages[i] = t
-		}
-		for i := 0; i < len(stages); i++ {
-			if &rndstages[i] == nil {
-				fmt.Println("nil")
-			}
-			stages[i].copyfrom = rndstages[i]
-		}
+		rndstages = shuffle(random, rndstages)
 	}
+
+	for i := 0; i < len(stages); i++ {
+		stages[i].copyfrom = rndstages[i]
+		fmt.Println(stages[i].copyfrom.sublevels)
+		fmt.Println(rndstages[i].sublevels)
+	}
+
+	return stages
 }
 
 func backupSublevel(id uint, rom []byte) map[string][]byte {
@@ -453,12 +469,14 @@ func copySublevel(to uint, from uint, rom []byte) {
 		fmx := o.offset + from*o.bytes
 		tox := o.offset + to*o.bytes
 		setSlice(rom, tox, rom[fmx:fmx+o.bytes])
+		//printMD5(rom, "copySublevel")
 	}
 }
 
 func moveSublevel(to uint, from uint, rom []byte) {
 	// copy the sublevel data first
 	copySublevel(to, from, rom)
+	fmt.Println("moveSublevel from", to, "from", from)
 
 	// copy the TEST level into the now-freed sublevel slot
 	setSlice(rom, LAYER1_OFFSET+3*from, []byte{0x00, 0x80, 0x06})
@@ -482,24 +500,28 @@ func findOpenSecondaryExit(bank uint, rom []byte) uint {
 func fixSublevels(stg *stage, remap map[uint]uint, rom []byte) {
 	sublevels := make([]uint, len(stg.copyfrom.sublevels))
 	copy(sublevels, stg.copyfrom.sublevels)
+	fmt.Println(sublevels)
 	sublevels[0] = stg.id
-
+	//printMD5(rom, "fixSublevels before for 1")
 	for i := 1; i < len(sublevels); i++ {
 		id := sublevels[i]
+		fmt.Println("id =", id, "stg.id =", stg.id)
 		if (id & 0x100) != (stg.id & 0x100) {
 			remap[id] = findOpenSublevel(stg.id&0x100, rom)
 			newid := remap[id]
 			moveSublevel(newid, id, rom)
 		}
 	}
+	//printMD5(rom, "fixSublevels after for 1")
 
 	// fix all screen exits
 	var secid uint
 	secexitcleanup := []uint{}
+	//printMD5(rom, "fixSublevels before for 2")
 	for i := 0; i < len(stg.copyfrom.allexits); i++ {
 		x := stg.copyfrom.allexits[i]
 		target := getSublevelFromExit(x, rom)
-		for _, ele := range remap {
+		for ele, _ := range remap {
 			if ele == target {
 				newtarget := remap[target]
 				if !x.issecx {
@@ -525,27 +547,32 @@ func fixSublevels(stg *stage, remap map[uint]uint, rom []byte) {
 			}
 		}
 	}
+	//printMD5(rom, "fixSublevels after for 2")
 
+	//printMD5(rom, "fixSublevels before for 3")
 	for _, secid := range secexitcleanup {
 		rom[SEC_EXIT_OFFSET_LO+secid] = 0x00
 		rom[SEC_EXIT_OFFSET_HI+secid] &= 0xF7
 	}
+	//printMD5(rom, "fixSublevels after for 3")
+	fmt.Println()
 }
 
 func getRevealedTile(tile uint) uint {
-	lookup := map[uint]uint{
-		0x7B: 0x7C, 0x7D: 0x7E, 0x76: 0x77, 0x78: 0x79,
-		0x7F: 0x80, 0x59: 0x58, 0x57: 0x5E, 0x7A: 0x63,
+	lookup := map[byte]byte{
+		0x7C: 0x7B, 0x7E: 0x7D, 0x77: 0x76, 0x79: 0x78,
+		0x80: 0x7F, 0x58: 0x59, 0x5E: 0x57, 0x63: 0x7A,
 	}
 	var contains bool
 	for k, _ := range lookup {
-		if k == tile {
+		if uint(k) == tile {
 			contains = true
 		}
 	}
 
 	if contains {
-		return lookup[tile]
+		fmt.Println("tile in get", tile)
+		return uint(lookup[byte(tile)])
 	} else {
 		if tile >= 0x66 && tile <= 0x6D {
 			return tile + 8
@@ -584,7 +611,7 @@ func isPermanentTile(stg *stage) bool {
 }
 
 func getPermanentTile(tile uint) uint {
-	lookup := []byte{
+	lookup := map[byte]byte{
 		0x7B: 0x7C, 0x7D: 0x7E, 0x76: 0x77, 0x78: 0x79,
 		0x7F: 0x80, 0x59: 0x58, 0x57: 0x5E, 0x7A: 0x63,
 	}
@@ -597,7 +624,7 @@ func getPermanentTile(tile uint) uint {
 	}
 
 	if contains {
-		return uint(lookup[tile])
+		return uint(lookup[byte(tile)])
 	} else {
 		if tile >= 0x6E && tile <= 0x75 {
 			return tile - 8
@@ -605,25 +632,24 @@ func getPermanentTile(tile uint) uint {
 			return tile
 		}
 	}
-
 }
 
-var hasRun bool
+var performCopyCount int = 0
 
 func performCopy(stg *stage, _map map[uint]uint, rom []byte, opt *options) {
-	if hasRun {
-		return
-	}
-	hasRun = true
+	//fmt.Println("PERFORM COPY #", performCopyCount, "\n########################################")
+	//performCopyCount++
 	_map[stg.copyfrom.id] = stg.id
 	//printMD5(rom)
 	var start uint
 	var o levelOffset
+	//printMD5(rom, "performCopy 1")
 	for i := 0; i < len(LEVEL_OFFSETS); i++ {
-		fmt.Println(o.name)
-		fmt.Println(stg.copyfrom.data[o.name])
+		//fmt.Println(o.name)
+		//fmt.Println(stg.copyfrom.data[o.name])
 		o = LEVEL_OFFSETS[i]
 		start = o.offset + o.bytes*stg.id
+		fmt.Println("stage=", stg.name, "copyfrom=", stg.copyfrom.name, "name=", o.name, "start=", start, stg.copyfrom.data[o.name])
 		setSlice(rom, start, stg.copyfrom.data[o.name])
 		//fmt.Println("name", o.name)
 		//fmt.Printf("offset: 0x%06x\n", o.offset)
@@ -631,6 +657,7 @@ func performCopy(stg *stage, _map map[uint]uint, rom []byte, opt *options) {
 	}
 	//printMD5(rom)
 
+	//printMD5(rom, "performCopy 2")
 	skiprename := opt.levelNames == LEVEL_NAMES_MATCH_OVERWORLD
 	for i := 0; i < len(TRANS_OFFSETS); i++ {
 		o := TRANS_OFFSETS[i]
@@ -642,6 +669,7 @@ func performCopy(stg *stage, _map map[uint]uint, rom []byte, opt *options) {
 	}
 	//printMD5(rom)
 
+	//printMD5(rom, "performCopy 3")
 	// castle destruction sequence translevels
 	if stg.copyfrom.castle > 0 {
 		rom[0x049A7+stg.copyfrom.castle-1] = byte(stg.translevel)
@@ -667,9 +695,11 @@ func performCopy(stg *stage, _map map[uint]uint, rom []byte, opt *options) {
 	}
 	//printMD5(rom)
 
+	//printMD5(rom, "performCopy 4")
 	// if the stage we are copying from is default "backwards", we should fix all the
 	// associated exits since they have their exits unintuitively reversed
 	if stg.copyfrom.id == 0x004 || stg.copyfrom.id == 0x11D {
+		fmt.Println("SWAPPING EXITS D:")
 		swapExits(stg.copyfrom, rom)
 		swapExits(stg, rom)
 	}
@@ -678,15 +708,21 @@ func performCopy(stg *stage, _map map[uint]uint, rom []byte, opt *options) {
 	// if we move a stage between 0x100 banks, we need to move sublevels
 	// screen exits as well might need to be fixed, even if we don't change banks
 	fixSublevels(stg, _map, rom)
-	//printMD5(rom)
+
+	//printMD5(rom, "after fixSublevels")
 
 	// update the overworld tile
 	if stg.copyfrom.data != nil && stg.copyfrom.data["owtile"] != nil {
+		fmt.Println("tile", uint(stg.copyfrom.data["owtile"][0]))
 		ow := getRevealedTile(uint(stg.copyfrom.data["owtile"][0]))
 		if isPermanentTile(stg) {
+			fmt.Println("permanent")
 			ow = getPermanentTile(ow)
 		}
-		rom[getOverworldOffset(stg, 0)] = byte(ow)
+		overworldOffset := getOverworldOffset(stg, 0)
+		rom[overworldOffset] = byte(ow)
+		fmt.Println(overworldOffset, ow)
+		//printMD5(rom, "getOverworldOffset set")
 
 		// castle 1 is copied into the small version of YI on the main map,
 		// which means that whatever stage ends up at c1 needs to be copied there as well
@@ -696,16 +732,19 @@ func performCopy(stg *stage, _map map[uint]uint, rom []byte, opt *options) {
 				rom[0x67A44] = 0x00
 			}
 		}
+		//printMD5(rom, "c1 fixed")
 
 		// moving a castle here, need to add a castle top
 		if isCastle(stg.copyfrom) && !isCastle(stg) {
 			rom[getOverworldOffset(stg, 1)] = []byte{0x00, 0xA6, 0x4C}[stg.cpath]
 		}
+		//printMD5(rom, "castle top")
 
 		// moving a castle away, need to fix the top tile
 		if !isCastle(stg.copyfrom) && isCastle(stg) {
 			rom[getOverworldOffset(stg, 1)] = []byte{0x00, 0x00, 0x10}[stg.cpath]
 		}
+		//printMD5(rom, "fix castle top")
 
 		// fix offscreen event tiles
 		for k, _ := range OFFSCREEN_EVENT_TILES {
@@ -720,7 +759,11 @@ func performCopy(stg *stage, _map map[uint]uint, rom []byte, opt *options) {
 				break
 			}
 		}
+		//printMD5(rom, "offscreen event tiles")
+	} else {
+		fmt.Println("null")
 	}
+	//fmt.Println("#########################################")
 }
 
 func removeAutoscrollers(rom []byte) {
@@ -761,8 +804,8 @@ func removeAutoscrollers(rom []byte) {
 
 func fixOverworldEvents(stages []*stage, rom []byte) {
 	_map := map[byte]*stage{}
-	var stg *stage
 	for i := 0; i < len(stages); i++ {
+		var stg *stage
 		if stages[i].copyfrom != nil {
 			stg = stages[i].copyfrom
 		} else {
@@ -771,6 +814,7 @@ func fixOverworldEvents(stages []*stage, rom []byte) {
 
 		if stg.copyfrom.palace != 0 || stg.copyfrom.castle != 0 {
 			_map[rom[TRANSLEVEL_EVENTS+stg.copyfrom.translevel]] = stg
+			fmt.Println(TRANSLEVEL_EVENTS+stg.copyfrom.translevel, stg)
 		}
 	}
 
@@ -779,7 +823,8 @@ func fixOverworldEvents(stages []*stage, rom []byte) {
 	VRAM := 0x26587
 
 	for i := 0; i < 16; i++ {
-		_ /*stage*/ = _map[rom[EVENTS+i]]
+		var stg *stage
+		stg = _map[rom[EVENTS+i]]
 		if stg == nil || stg.copyfrom == nil {
 			continue
 		}
@@ -790,6 +835,9 @@ func fixOverworldEvents(stages []*stage, rom []byte) {
 		if stg.copyfrom.castle > 0 {
 			y--
 		}
+
+		//fmt.Println("x", x, "y", y)
+
 		rom[COORDS+i*2+1] = byte((y>>4)*2 + (x >> 4))
 		s := rom[COORDS+i*2+1]
 
@@ -799,78 +847,92 @@ func fixOverworldEvents(stages []*stage, rom []byte) {
 			}
 			x = (x + 0xF) & 0xF
 		}
+
+		//fmt.Println("s", s)
 		pos := ((y & 0xF) << 4) | (x & 0xF)
 		rom[COORDS+i*2] = byte(pos)
 
 		// update vram values for overworld updates
 		rom[VRAM+i*2] = byte(0x20 | ((y & 0x10) >> 1) | ((x & 0x10) >> 2) | ((y & 0x0C) >> 2))
 		rom[VRAM+i*2+1] = byte(((y & 0x03) << 6) | ((x & 0x0F) << 1))
-
-		// always play bgm after a stage
-		rom[0x20E2E] = 0x80
-
-		// fix castle crush for castles crossing section numbers
-		setSlice(rom, 0x266C5, []byte{0x20, 0x36, 0xA2, 0xEA})
-		setSlice(rom, 0x26F22, []byte{0x20, 0x35, 0xA2, 0xEA})
-
-		setSlice(rom, 0x22235, []byte{
-			0xA8, 0x29, 0xFF, 0x00, 0xC9, 0xF0, 0x00, 0x98, 0x90,
-			0x03, 0x69, 0xFF, 0x00, 0x69, 0x10, 0x00, 0x60})
-
-		setSlice(rom, 0x27625, []byte{0x00, 0x00, 0x01, 0xE0, 0x00,
-			0x03, 0x00, 0x00, 0x00, 0x00,
-			0x06, 0x70, 0x01, 0x20, 0x00,
-			0x07, 0x38, 0x00, 0x8A, 0x01,
-			0x00, 0x58, 0x00, 0x7A, 0x00,
-			0x08, 0x88, 0x01, 0x18, 0x00,
-			0x09, 0x48, 0x01, 0xFC, 0xFF})
-
-		ghostspritebase := 0x27625 + 35
-		ghostsubmapbase := 0x27666
-
-		for i := 0; i < len(stages); i++ {
-			if stages[i].copyfrom.ghost == 1 {
-				s := stages[i].tile[1] >= 0x20
-				x := stages[i].tile[0]*0x10 - 0x10
-				if s {
-					x -= 0x0010
-				}
-
-				y := stages[i].tile[1]*0x10 - 0x08
-				if s {
-					x -= 0x0200
-				}
-
-				setSlice(rom, uint(ghostspritebase), []byte{
-					0x0A, byte(x & 0xFF), byte((x >> 8) & 0xFF),
-					byte(y & 0xFF), byte((y >> 8) & 0xFF)})
-
-				ghostspritebase += 5
-
-				if s {
-					rom[ghostsubmapbase] = 1
-				} else {
-					rom[ghostsubmapbase] = 0
-				}
-				ghostsubmapbase++
-			}
-		}
-		setSlice(rom, 0x2766F, []byte{0x01, 0x20, 0x40, 0x60, 0x80, 0xA0})
-		setSlice(rom, 0x27D7F, []byte{0xF0, 0x02, 0xA9, 0x01, 0x5D, 0x5C, 0xF6, 0xD0, 0x2C, 0x9B, 0x8A, 0x85, 0x0A, 0x0A, 0x0A,
-			0x18, 0x65, 0x0A, 0xAA, 0xC2, 0x20, 0xBD, 0x17, 0xF6, 0x18, 0x69, 0x10, 0x00, 0x20, 0xB9,
-			0xFF, 0xE2, 0x30, 0xC9, 0x7A, 0xF0, 0x10, 0xBB, 0xA9, 0x34, 0xBC, 0x95, 0x0E, 0x30, 0x02,
-			0xA9, 0x44, 0xEB, 0xA9, 0x60, 0x20, 0x06, 0xFB})
-
-		setSlice(rom, 0x27FB1, []byte{0x22, 0x75, 0xF6, 0x04, 0x5C, 0x00, 0x80, 0x7F, 0x85, 0x0A, 0xE2, 0x20, 0x4A, 0x4A, 0x4A,
-			0x4A, 0x85, 0x0A, 0xC2, 0x20, 0xBD, 0x19, 0xF6, 0x18, 0x69, 0x08, 0x00, 0x85, 0x0C, 0xE2,
-			0x20, 0x29, 0xF0, 0x18, 0x65, 0x0A, 0xEB, 0xA5, 0x0D, 0x0A, 0x65, 0x0B, 0xEB, 0xC2, 0x30,
-			0xAA, 0xBF, 0x00, 0xC8, 0x7E, 0x85, 0x58, 0x60})
-
-		rom[0x276B0] = 0x0A
-		rom[0x27802] = 0x0A
-
-		setSlice(rom, 0x01AA4, []byte{0x22, 0xB1, 0xFF, 0x04})
 	}
+	//printMD5(rom, "vram values")
+
+	// always play bgm after a stage
+	rom[0x20E2E] = 0x80
+
+	// fix castle crush for castles crossing section numbers
+	setSlice(rom, 0x266C5, []byte{0x20, 0x36, 0xA2, 0xEA})
+	setSlice(rom, 0x26F22, []byte{0x20, 0x35, 0xA2, 0xEA})
+
+	setSlice(rom, 0x22235, []byte{
+		0xA8, 0x29, 0xFF, 0x00, 0xC9, 0xF0, 0x00, 0x98, 0x90,
+		0x03, 0x69, 0xFF, 0x00, 0x69, 0x10, 0x00, 0x60})
+
+	setSlice(rom, 0x27625, []byte{0x00, 0x00, 0x01, 0xE0, 0x00,
+		0x03, 0x00, 0x00, 0x00, 0x00,
+		0x06, 0x70, 0x01, 0x20, 0x00,
+		0x07, 0x38, 0x00, 0x8A, 0x01,
+		0x00, 0x58, 0x00, 0x7A, 0x00,
+		0x08, 0x88, 0x01, 0x18, 0x00,
+		0x09, 0x48, 0x01, 0xFC, 0xFF})
+
+	//printMD5(rom, "castle crush")
+
+	ghostspritebase := 0x27625 + 35
+	ghostsubmapbase := 0x27666
+
+	for i := 0; i < len(stages); i++ {
+		if stages[i].copyfrom.ghost == 1 {
+			s := stages[i].tile[1] >= 0x20
+
+			sub := 0
+			if s {
+				sub = 0x0010
+			}
+			x := int(stages[i].tile[0])*0x10 - 0x10 - sub
+
+			sub = 0
+			if s {
+				sub = 0x0200
+			}
+
+			y := int(stages[i].tile[1])*0x10 - 0x08 - sub
+
+			fmt.Println("s", s, "x", x, "y", y, stages[i].tile)
+
+			setSlice(rom, uint(ghostspritebase), []byte{
+				0x0A, byte(x & 0xFF), byte((x >> 8) & 0xFF),
+				byte(y & 0xFF), byte((y >> 8) & 0xFF)})
+
+			ghostspritebase += 5
+
+			if s {
+				rom[ghostsubmapbase] = 1
+			} else {
+				rom[ghostsubmapbase] = 0
+			}
+			ghostsubmapbase++
+			//printMD5(rom, "ghost stuff loop")
+		}
+	}
+
+	//printMD5(rom, "ghost stuff")
+	setSlice(rom, 0x2766F, []byte{0x01, 0x20, 0x40, 0x60, 0x80, 0xA0})
+	setSlice(rom, 0x27D7F, []byte{0xF0, 0x02, 0xA9, 0x01, 0x5D, 0x5C, 0xF6, 0xD0, 0x2C, 0x9B, 0x8A, 0x85, 0x0A, 0x0A, 0x0A,
+		0x18, 0x65, 0x0A, 0xAA, 0xC2, 0x20, 0xBD, 0x17, 0xF6, 0x18, 0x69, 0x10, 0x00, 0x20, 0xB9,
+		0xFF, 0xE2, 0x30, 0xC9, 0x7A, 0xF0, 0x10, 0xBB, 0xA9, 0x34, 0xBC, 0x95, 0x0E, 0x30, 0x02,
+		0xA9, 0x44, 0xEB, 0xA9, 0x60, 0x20, 0x06, 0xFB})
+
+	setSlice(rom, 0x27FB1, []byte{0x22, 0x75, 0xF6, 0x04, 0x5C, 0x00, 0x80, 0x7F, 0x85, 0x0A, 0xE2, 0x20, 0x4A, 0x4A, 0x4A,
+		0x4A, 0x85, 0x0A, 0xC2, 0x20, 0xBD, 0x19, 0xF6, 0x18, 0x69, 0x08, 0x00, 0x85, 0x0C, 0xE2,
+		0x20, 0x29, 0xF0, 0x18, 0x65, 0x0A, 0xEB, 0xA5, 0x0D, 0x0A, 0x65, 0x0B, 0xEB, 0xC2, 0x30,
+		0xAA, 0xBF, 0x00, 0xC8, 0x7E, 0x85, 0x58, 0x60})
+
+	rom[0x276B0] = 0x0A
+	rom[0x27802] = 0x0A
+
+	setSlice(rom, 0x01AA4, []byte{0x22, 0xB1, 0xFF, 0x04})
 }
 
 func fixBlockPaths(lookup map[string]*stage, rom []byte) {
@@ -912,7 +974,7 @@ func fixMessageBoxes(stages []*stage, rom []byte) {
 	}
 }
 
-func randomizeKoopaKids(_map map[uint]uint, random Random, rom []byte) {
+func randomizeKoopaKids(_map map[uint]uint, random *Random, rom []byte) {
 	bossrooms := []bossroom{}
 	for i := 0; i < len(KOOPA_KIDS); i++ {
 		// find the actual sublevel holding this boss fight
@@ -952,7 +1014,7 @@ func randomizeKoopaKids(_map map[uint]uint, random Random, rom []byte) {
 	// TODO: fix castle names
 }
 
-func randomizeBossDifficulty(random Random, rom []byte) {
+func randomizeBossDifficulty(random *Random, rom []byte) {
 	// health of ludwig+morton+roy
 	var jhp = random.NextIntRange(2, 9)
 	rom[0x0CFCD] = byte(jhp)
@@ -1033,35 +1095,40 @@ func randomizeRom(rom []byte, seed int, opt *options) {
 		}
 	}
 
-	//printMD5(rom)
+	printMD5(rom, "start")
 
-	random := Random{seed}
-	vseed := fmt.Sprintf("0x%08x", seed)
+	random := &Random{seed}
+
+	vseed := fmt.Sprintf("%08x", seed)
 
 	if len(rom) == 0x80200 {
 		rom = rom[0x200:]
 	}
 
-	//printMD5(rom)
+	printMD5(rom, "created")
 
 	// randomize all of the slippery/water flags
 	randomizeFlags(random, stages, rom, opt)
-	//printMD5(rom)
+	printSeed(random)
+	printMD5(rom, "randomizeFlags")
 
 	// NOTE: MAKE SURE ANY TABLES BACKED UP BY THIS ROUTINE ARE GENERATED *BEFORE*
 	// THIS POINT. OTHERWISE, WE ARE BACKING UP UNINITIALIZED MEMORY!
 	backupData(stages, rom)
-	//printMD5(rom)
+	printSeed(random)
+	printMD5(rom, "backupData")
 
 	// put all the stages into buckets (any stage in same bucket can be swapped)
 	buckets := makeBuckets(stages, opt)
-	//printMD5(rom)
+	printSeed(random)
+	printMD5(rom, "makeBuckets")
 
 	// decide which stages will be swapped with which others
 	for i := 0; i < len(buckets); i++ {
-		shuffle(buckets[i], random, opt)
+		buckets[i] = shuffleLevels(buckets[i], random, opt)
 	}
-	//printMD5(rom)
+	printSeed(random)
+	printMD5(rom, "shuffle")
 
 	// quick stage lookup table
 	stagelookup := map[string]*stage{}
@@ -1072,7 +1139,8 @@ func randomizeRom(rom []byte, seed int, opt *options) {
 	if opt.randomizeBowserDoors {
 		randomizeBowser8Doors(random, rom)
 	}
-	//printMD5(rom)
+	printSeed(random)
+	printMD5(rom, "bowserDoors")
 
 	globalremapping := map[uint]uint{}
 
@@ -1089,7 +1157,8 @@ func randomizeRom(rom []byte, seed int, opt *options) {
 	default:
 		break
 	}
-	//printMD5(rom)
+	printSeed(random)
+	printMD5(rom, "gauntlet")
 
 	switch opt.powerups {
 	case POWERUP_RANDOMIZE:
@@ -1104,61 +1173,76 @@ func randomizeRom(rom []byte, seed int, opt *options) {
 	default:
 		break
 	}
-	//printMD5(rom)
+	printSeed(random)
+	printMD5(rom, "powerups")
 
 	if opt.noYoshi {
 		removeYoshi(rom, stages)
 	}
-	//printMD5(rom)
+	printSeed(random)
+	printMD5(rom, "removeYoshi")
 
 	// remove all autoscroller sprites and update v-scroll, if checked
 	if opt.removeAutoscrollers {
 		removeAutoscrollers(rom)
 	}
-	//printMD5(rom)
+	printSeed(random)
+	printMD5(rom, "autoscrollers")
 
 	// update level names if randomized
 	if opt.levelNamesCustom {
 		randomizeLevelNames(random, rom)
 	}
-	//printMD5(rom)
+	printSeed(random)
+	printMD5(rom, "randomizeLevelNames")
 
 	// swap all the level name pointers RIGHT before we perform the copy
 	if opt.levelNames == LEVEL_NAMES_RANDOM_STAGE {
 		shuffleLevelNames(stages, random)
 	}
-	//printMD5(rom)
+	printSeed(random)
+	printMD5(rom, "shuffleLevelNames")
 
 	for i := 0; i < len(stages); i++ {
+		fmt.Println("\n\n\n")
+		//printMD5(rom, "before performcopy")
 		performCopy(stages[i], globalremapping, rom, opt)
+		//printMD5(rom, "after performcopy")
 		// randomly swap the normal/secret exits
 		if opt.randomizeExits && random.NextFloat() > 0.5 {
+			fmt.Println("swapexits")
 			swapExits(stages[i], rom)
 		}
 	}
-	printMD5(rom)
+	printSeed(random)
+	printMD5(rom, "performCopy")
 
 	// fix castle/fort/switch overworld tile events
 	fixOverworldEvents(stages, rom)
-	//printMD5(rom)
+	printSeed(random)
+	printMD5(rom, "fixOverworldEvents")
 
 	// fix Roy/Larry castle block paths
 	fixBlockPaths(stagelookup, rom)
-	//printMD5(rom)
+	printSeed(random)
+	printMD5(rom, "fixBlockPaths")
 
 	// fix message box messages
 	fixMessageBoxes(stages, rom)
-	//printMD5(rom)
+	printSeed(random)
+	printMD5(rom, "fixMessageBoxes")
 
 	if opt.randomizeKoopaKids {
 		randomizeKoopaKids(globalremapping, random, rom)
 	}
-	//printMD5(rom)
+	printSeed(random)
+	printMD5(rom, "randomizeKoopaKids")
 
 	if opt.randomizeBossDiff {
 		randomizeBossDifficulty(random, rom)
 	}
-	//printMD5(rom)
+	printSeed(random)
+	printMD5(rom, "randomizeBossDifficulty")
 
 	// disable the forced no-yoshi intro on moved stages
 	rom[0x2DA1D] = 0x60
@@ -1171,10 +1255,13 @@ func randomizeRom(rom []byte, seed int, opt *options) {
 	// write version number and the randomizer seed to the rom
 	var checksum = fmt.Sprintf("%04x", getChecksum(rom))
 	writeToTitle(VERSION_STRING+" @"+vseed+"-"+checksum, 0x2, rom)
-	//printMD5(rom)
+	printMD5(rom, "writeToTitle")
 
 	fixChecksum(rom)
-	printMD5(rom)
+	printSeed(random)
+	printMD5(rom, "fixChecksum")
+
+	ioutil.WriteFile("out.sfc", rom, 0644)
 }
 
 func checkMD5(data []byte) error {
@@ -1218,4 +1305,8 @@ func main() {
 	fmt.Printf("Using seed %x\n", seed)
 
 	randomizeRom(dat, seed, opt)
+}
+
+func printSeed(r *Random) {
+	//fmt.Println("seed=", r.Seed)
 }
