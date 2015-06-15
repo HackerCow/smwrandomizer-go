@@ -8,4 +8,4 @@ Also (mainly, really) it helps me boost my Go skills and understanding of SMW.
 99.9% of this program's logic was designed by authorblues (and others). I merely "translated" the whole program into another language.
 
 ## Download & Installation
-Coming soon, in the meantime use `go build`
+Use the `run.sh` script in the repository (download coming soon)
