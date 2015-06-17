@@ -98,3 +98,7 @@ var SMW_STAGES = []stage{
 	{"bswitch", 5, 0, 0, 2, 0, 0, 0x121, NO_CASTLE, [2]uint{0xd, 0x3a}, []string{}, nil, 0, nil, nil, nil},
 	{"topsecret", 2, 0, 0, 0, 0, 0, 0x3, NO_CASTLE, [2]uint{0x5, 0x8}, []string{}, nil, 0, nil, nil, nil},
 }
+
+func isCastle(stg *stage) bool {
+	return stg.castle > 0
+}

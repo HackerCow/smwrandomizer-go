@@ -1,6 +1,9 @@
 package main
 
-import "fmt"
+import (
+	"errors"
+	"fmt"
+)
 
 type exit struct {
 	id     uint
@@ -11,9 +14,23 @@ type exit struct {
 	target uint
 }
 
+func findOpenSecondaryExit(bank uint, rom []byte) uint {
+	bank &= 0x100
+	var i uint
+	for i = 0x01; i <= 0xFF; i++ {
+		if rom[SEC_EXIT_OFFSET_LO+(bank|i)] == 0x00 {
+			return (bank | i)
+		}
+	}
+	// please god, this should never happen!
+	err := fmt.Sprintf("No free secondary exits in bank %x", bank)
+	panic(errors.New(err))
+	return 0
+}
+
 func swapExits(stg *stage, rom []byte) {
 	if stg.exits != 2 {
-		fmt.Println("swapExits stg.exits != 2 (", stg.exits, ")")
+		//fmt.Println("swapExits stg.exits != 2 (", stg.exits, ")")
 		return
 	}
 
@@ -22,7 +39,7 @@ func swapExits(stg *stage, rom []byte) {
 	stg.out[0] = stg.out[1]
 	stg.out[1] = outa
 
-	fmt.Println("stg.out=", stg.out)
+	//fmt.Println("stg.out=", stg.out)
 
 	// secret exit triggers event+1
 	ndxa := rom[TRANSLEVEL_EVENTS+stg.translevel]
@@ -35,7 +52,7 @@ func swapExits(stg *stage, rom []byte) {
 	dlo := dirs & 0x30
 	rom[0x25678+stg.translevel] = (dirs & 0x0F) | (dhi >> 2) | (dlo << 2)
 
-	fmt.Println("exit directions=", rom[0x25678+stg.translevel])
+	//fmt.Println("exit directions=", rom[0x25678+stg.translevel])
 
 	// LAYER 1 ------------------------------
 
@@ -88,11 +105,11 @@ func swapExits(stg *stage, rom []byte) {
 	eventb := make([]byte, uint(0x25D8D+(offsetc*4))-(uint(0x25D8D)+offsetb*4))
 	copy(eventb, rom[(uint(0x25D8D)+offsetb*4):(uint(0x25D8D)+offsetc*4)])
 
-	fmt.Println("offsets:", offseta, offsetb, offsetc)
-	fmt.Println("boundaries:", uint(0x25D8D)+offseta*4, uint(0x25D8D)+offsetb*4, uint(0x25D8D)+offsetb*4, uint(0x25D8D)+offsetc*4)
-	fmt.Println("ndx:", ndxa, ndxb, ndxc)
+	//fmt.Println("offsets:", offseta, offsetb, offsetc)
+	//fmt.Println("boundaries:", uint(0x25D8D)+offseta*4, uint(0x25D8D)+offsetb*4, uint(0x25D8D)+offsetb*4, uint(0x25D8D)+offsetc*4)
+	//fmt.Println("ndx:", ndxa, ndxb, ndxc)
 
-	fmt.Println(eventa, eventb)
+	//fmt.Println(eventa, eventb)
 	// update the new offset for where event+1 should go
 	offsetb = offseta + bsz
 
@@ -102,9 +119,44 @@ func swapExits(stg *stage, rom []byte) {
 
 	printMD5(rom, "event data")
 
-	fmt.Println(offsetb&0xFF, (offsetb>>8)&0xFF)
+	//fmt.Println(offsetb&0xFF, (offsetb>>8)&0xFF)
 	// update the offset for event+1 back into the table
 	setSlice(rom, uint(0x26359)+uint(ndxb)*2, []byte{byte(offsetb & 0xFF), byte((offsetb >> 8) & 0xFF)})
 
 	printMD5(rom, "offset for event+1")
+}
+
+func getScreenExitsByAddr(snes uint, rom []byte, id uint) []*exit {
+	var exits []*exit
+	addr := snesAddressToOffset(snes) + 5
+
+	for ; ; addr += 3 {
+		if rom[addr] == 0xFF {
+			break
+		}
+		if (rom[addr]&0xE0) == 0x00 && (rom[addr+1]&0xF5) == 0x00 && rom[addr+2] == 0x00 {
+			for ; ; addr += 4 {
+				if rom[addr] == 0xFF {
+					break
+				}
+
+				target := uint(rom[addr+3]) | (id & 0x100)
+				x := &exit{id, addr, uint(rom[addr] & 0x1F), (rom[addr+1] & 0x08) != 0, (rom[addr+1] & 0x02) != 0, target}
+				exits = append(exits, x)
+			}
+			break
+		}
+	}
+	return exits
+}
+
+func getScreenExits(id uint, rom []byte) []*exit {
+	start := uint(LAYER1_OFFSET + 3*id)
+	snes := getPointer(start, 3, rom)
+	//fmt.Println("snes", snes)
+	return getScreenExitsByAddr(snes, rom, id)
+}
+
+func getSecondaryExitTarget(xid uint, rom []byte) uint {
+	return uint(rom[SEC_EXIT_OFFSET_LO+xid]) | (xid & 0x100)
 }

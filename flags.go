@@ -26,8 +26,9 @@ const (
 )
 
 type options struct {
-	filename   string
-	customSeed string
+	filename    string
+	outFilename string
+	customSeed  string
 
 	randomizeStages    bool
 	randomizeSameWorld bool
@@ -57,6 +58,7 @@ type options struct {
 
 func parseFlags() (*options, error) {
 	seed := flag.String("seed", "", "A custom seed to use")
+	outFilename := flag.String("out", "", "The filename the ROM should be saved to. Default is \"smw-[seed].sfc\"")
 	randomizeStages := flag.Bool("randomizeStages", true, "Randomly Swap Stages (Sorta the point, ya know?)")
 	randomizeSameWorld := flag.Bool("randomizeSameWorld", false, "Keep Same World (Randomize only within world)")
 	randomizeSameType := flag.Bool("randomizeSameType", false, "Keep Same Type (Ghost, Water, Normal)")
@@ -89,7 +91,7 @@ func parseFlags() (*options, error) {
 	DEBUG_MD5 = *debugMD5
 
 	if len(args) != 1 {
-		return nil, errors.New("No/Invalid filename supplied.")
+		return nil, errors.New("No/Invalid filename supplied. For usage use -help.")
 	}
 
 	filename := args[0]
@@ -137,7 +139,7 @@ func parseFlags() (*options, error) {
 		return nil, errors.New("Invalid \"powerups\" option.")
 	}
 
-	opt := options{filename, *seed, *randomizeStages, *randomizeSameWorld, *randomizeSameType,
+	opt := options{filename, *outFilename, *seed, *randomizeStages, *randomizeSameWorld, *randomizeSameType,
 		*randomize95Exit, levelNamesOpt, *customRandomNames, bowserOpt, *randomizeBowserDoors,
 		powerupOpt, *noYoshi, *slippery, *addWater, *delWater, *randomizeExits,
 		*randomizeKoopaKids, *randomizeBossDiff, *removeAutoscrollers, *infiniteLives}
